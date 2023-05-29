@@ -65,7 +65,7 @@ class _GhostInfo:
     times: list[float]
 
     @classmethod
-    def process(cls, dem):
+    def process_all(cls, dem):
         server_info_seen = False
         view_entity_id = None
         models = None
@@ -78,7 +78,16 @@ class _GhostInfo:
             for msg in block.messages:
                 if isinstance(msg, messages.ServerInfoMessage):
                     if server_info_seen:
-                        raise Exception("multiple server infos")
+                        yield cls(models, entity_baseline, entity_updates, times)
+
+                        server_info_seen = False
+                        view_entity_id = None
+                        models = None
+                        time = None
+                        entity_baseline = None
+                        times = []
+                        entity_updates = []
+
                     models = msg.models_precache
                     server_info_seen = True
 
@@ -108,7 +117,21 @@ class _GhostInfo:
         if entity_baseline is None:
             raise Exception("no view entity baseline")
 
-        return cls(models, entity_baseline, entity_updates, times)
+        yield cls(models, entity_baseline, entity_updates, times)
+
+    @classmethod
+    def process(cls, dem, base_world_model):
+        gis = list(cls.process_all(dem))
+        map_gis = [gi for gi in gis if gi.models[1] == base_world_model]
+        if len(map_gis) != len(gis):
+            bad_maps = [gi.models[1] for gi in gis if gi.models[1] != base_world_model]
+            logger.warning(f'ignoring loads on non-base maps: {bad_maps}')
+        if not len(map_gis):
+            raise Exception(f'ghost demo map(s) ({[gi.models[1] for gi in gis]}) do not match base '
+                            f'demo ({base_world_model})')
+        if len(map_gis) > 1:
+            logger.warning(f"multiple ({len(gis)}) server infos in demos, using longest")
+        return max(map_gis, key=lambda gi: len(gi.times))
 
 
 def _main():
@@ -120,10 +143,10 @@ def _main():
     base_dem = pydem.parse_demo(fnames[0])
     base_info = _BaseInfo.process(base_dem)
     logger.info('parsing ghost demos')
-    ghost_infos = [
-        _GhostInfo.process(pydem.parse_demo(fname))
-        for fname in fnames[1:]
-    ]
+    ghost_infos = []
+    for fname in fnames[1:]:
+        logger.info(f"processing {fname}")
+        ghost_infos.append(_GhostInfo.process(pydem.parse_demo(fname), base_info.models[1]))
 
     # Construct mappings for model numbers.
     logger.info('converting demo')
