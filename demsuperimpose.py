@@ -166,6 +166,7 @@ def _main():
         new_messages = []
 
         # Convert model numbers to the new numbers.
+        last_spawn_baseline_idx = None
         for msg in block.messages:
             if isinstance(msg, (messages.SpawnStaticMessage,
                                 messages.SpawnBaselineMessage,
@@ -176,6 +177,8 @@ def _main():
                     model_num = new_model_dict[
                         base_info.models[msg.modelindex - 1]
                     ]
+                if isinstance(msg, messages.SpawnBaselineMessage):
+                    last_spawn_baseline_idx = len(new_messages)
                 new_messages.append(dataclasses.replace(
                     msg,
                     modelindex=model_num
@@ -195,7 +198,8 @@ def _main():
                     model_num = new_model_dict[
                         ghost_info.models[baseline.modelindex - 1]
                     ]
-                new_messages.append(
+                new_messages.insert(
+                    last_spawn_baseline_idx,
                     dataclasses.replace(
                         baseline,
                         entity_num=entity_num,
