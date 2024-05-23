@@ -173,6 +173,8 @@ def _main():
                                 messages.EntityUpdateMessage)):
                 if msg.modelindex is None:
                     model_num = None
+                elif msg.modelindex == 0:
+                    model_num = 0
                 else:
                     model_num = new_model_dict[
                         base_info.models[msg.modelindex - 1]
@@ -194,6 +196,8 @@ def _main():
                 baseline = ghost_info.entity_baseline
                 if baseline.modelindex is None:
                     model_num = None
+                elif baseline.modelindex == 0:
+                    model_num = 0
                 else:
                     model_num = new_model_dict[
                         ghost_info.models[baseline.modelindex - 1]
@@ -219,6 +223,8 @@ def _main():
                     update = ghost_info.entity_updates[time_idx]
                     if update.modelindex is None:
                         model_num = None
+                    elif update.modelindex == 0:
+                        model_num = 0
                     else:
                         model_num = new_model_dict[
                             ghost_info.models[update.modelindex - 1]
