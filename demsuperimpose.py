@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Matthew Earl
+# Copyright (c) 2024 Matthew Earl
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -31,17 +31,24 @@ import messages
 logger = logging.getLogger(__name__)
 
 
+_MAX_SCOREBOARD = 16
+
+
 @dataclasses.dataclass
 class _BaseInfo:
     """Info extracted from a single pass through the demo"""
     models: list[str]
     max_entity_id: int
+    max_clients: int
+    first_non_client_entity_id: int
 
     @classmethod
     def process(cls, dem):
         server_info_seen = False
         models = None
         max_entity_id = None
+        max_clients = None
+        first_non_client_entity_id = None
 
         for block in dem.blocks:
             for msg in block.messages:
@@ -50,10 +57,21 @@ class _BaseInfo:
                         raise Exception("multiple server infos")
                     models = msg.models_precache
                     server_info_seen = True
-                if isinstance(msg, messages.EntityUpdateMessage):
-                    if max_entity_id is None or max_entity_id < msg.num:
-                        max_entity_id = msg.num
-        return cls(models, max_entity_id)
+                    max_clients = msg.max_clients
+                if (isinstance(msg, messages.EntityUpdateMessage)
+                        and (max_entity_id is None or max_entity_id < msg.num)):
+                    max_entity_id = msg.num
+
+        for block in dem.blocks:
+            for msg in block.messages:
+                if (isinstance(msg, messages.EntityUpdateMessage)
+                        and msg.num > max_clients
+                        and (first_non_client_entity_id is None
+                             or first_non_client_entity_id > msg.num)):
+                    first_non_client_entity_id = msg.num
+
+        return cls(models, max_entity_id, max_clients,
+                   first_non_client_entity_id)
 
 
 @dataclasses.dataclass
@@ -63,6 +81,8 @@ class _GhostInfo:
     entity_baseline: messages.SpawnBaselineMessage
     entity_updates: list[messages.EntityUpdateMessage]
     times: list[float]
+    name: str
+    color: int
 
     @classmethod
     def process_all(cls, dem):
@@ -73,12 +93,15 @@ class _GhostInfo:
         entity_baseline = None
         times = []
         entity_updates = []
+        name = "name not set"
+        color = 0
 
         for block in dem.blocks:
             for msg in block.messages:
                 if isinstance(msg, messages.ServerInfoMessage):
                     if server_info_seen:
-                        yield cls(models, entity_baseline, entity_updates, times)
+                        yield cls(models, entity_baseline, entity_updates,
+                                  times, name, color)
 
                         server_info_seen = False
                         view_entity_id = None
@@ -93,6 +116,15 @@ class _GhostInfo:
 
                 if isinstance(msg, messages.SetViewMessage):
                     view_entity_id = msg.viewentity_id
+
+                if (isinstance(msg, messages.UpdateNameMessage)
+                        and view_entity_id is not None
+                        and view_entity_id == msg.player_id + 1):
+                    name = msg.name
+                if (isinstance(msg, messages.UpdateColorsMessage)
+                        and view_entity_id is not None
+                        and view_entity_id == msg.player_id + 1):
+                    color = msg.color
 
                 if isinstance(msg, messages.SpawnBaselineMessage):
                     if view_entity_id is None:
@@ -117,7 +149,7 @@ class _GhostInfo:
         if entity_baseline is None:
             raise Exception("no view entity baseline")
 
-        yield cls(models, entity_baseline, entity_updates, times)
+        yield cls(models, entity_baseline, entity_updates, times, name, color)
 
     @classmethod
     def process(cls, dem, base_world_model):
@@ -133,6 +165,37 @@ class _GhostInfo:
             logger.warning(f"multiple ({len(gis)}) server infos in demos, using longest")
         return max(map_gis, key=lambda gi: len(gi.times))
 
+
+def _convert_msg_entity(msg, convert_entity_id):
+    if isinstance(msg, messages.SpawnBaselineMessage):
+        msg = dataclasses.replace(
+            msg,
+            entity_num=convert_entity_id(msg.entity_num)
+        )
+    elif isinstance(msg, messages.EntityUpdateMessage):
+        msg = dataclasses.replace(
+            msg,
+            num=convert_entity_id(msg.num)
+        )
+    elif isinstance(msg, messages.SoundMessage):
+        msg = dataclasses.replace(
+            msg,
+            ent=convert_entity_id(msg.ent)
+        )
+    elif (isinstance(msg, messages.TempEntityMessage)
+          and msg.type == messages.TempEntityType.LIGHTNING4):
+        msg = dataclasses.replace(
+            msg,
+            data=dataclasses.replace(
+                msg.data,
+                beam=dataclasses.replace(
+                    msg.data.beam,
+                    entity_num=convert_entity_id(msg.data.beam.entity_num)
+                )
+            )
+        )
+
+    return msg
 
 def _main():
     logging.basicConfig(level=logging.INFO)
@@ -160,6 +223,23 @@ def _main():
             if model_name not in new_model_dict:
                 new_model_dict[model_name] = len(new_model_dict) + 1
 
+    # Construct mappings for entity numbers.
+    assert base_info.max_clients <= _MAX_SCOREBOARD
+    old_num_clients = base_info.max_clients
+    new_num_clients = min(_MAX_SCOREBOARD, old_num_clients + len(ghost_infos))
+    def convert_entity_id(entity_id):
+        if entity_id < old_num_clients + 1:
+            new_entity_id = entity_id
+        else:
+            new_entity_id = entity_id + new_num_clients - old_num_clients
+        return new_entity_id
+    ghost_entity_ids = [
+        (old_num_clients + 1 + ghost_idx
+         if ghost_idx < new_num_clients - old_num_clients
+         else (base_info.max_entity_id + 1 + ghost_idx))
+        for ghost_idx, ghost_info in enumerate(ghost_infos)
+    ]
+
     # Re-write the original demo.
     new_blocks = []
     for block in base_dem.blocks:
@@ -182,17 +262,21 @@ def _main():
                 if isinstance(msg, messages.SpawnBaselineMessage):
                     last_spawn_baseline_idx = len(new_messages)
                 new_messages.append(dataclasses.replace(
-                    msg,
+                    _convert_msg_entity(msg, convert_entity_id),
                     modelindex=model_num
                 ))
+            elif isinstance(msg, messages.ServerInfoMessage):
+                new_messages.append(
+                    dataclasses.replace(msg, max_clients=new_num_clients)
+                )
             else:
-                new_messages.append(msg)
+                new_messages.append(_convert_msg_entity(msg, convert_entity_id))
 
         # Add baselines onto baseline block.
         if any(isinstance(msg, messages.SpawnBaselineMessage)
                 for msg in block.messages):
-            for idx, ghost_info in enumerate(ghost_infos):
-                entity_num = idx + 1 + base_info.max_entity_id
+            for ghost_idx, ghost_info in enumerate(ghost_infos):
+                entity_num = ghost_entity_ids[ghost_idx]
                 baseline = ghost_info.entity_baseline
                 if baseline.modelindex is None:
                     model_num = None
@@ -211,15 +295,32 @@ def _main():
                     )
                 )
 
+        # Add name / color updates into sign_on=3 block
+        if any(isinstance(msg, messages.SignOnNumMessage) and msg.stage == 3
+               for msg in block.messages):
+            for ghost_idx, ghost_info in enumerate(ghost_infos):
+                entity_num = ghost_entity_ids[ghost_idx]
+                if entity_num < new_num_clients + 1:
+                    new_messages.extend([
+                        messages.UpdateNameMessage(
+                            player_id=(entity_num - 1),
+                            name=ghost_info.name
+                        ),
+                        messages.UpdateColorsMessage(
+                            player_id=(entity_num - 1),
+                            color=ghost_info.color
+                        )
+                    ])
+
         # Add update messages.
         if (block.messages
                 and isinstance(block.messages[0], messages.TimeMessage)):
             time = block.messages[0].time
-            for idx, ghost_info in enumerate(ghost_infos):
+            for ghost_idx, ghost_info in enumerate(ghost_infos):
 
                 time_idx = bisect.bisect(ghost_info.times, time) - 1
                 if time_idx >= 0:
-                    entity_num = idx + 1 + base_info.max_entity_id
+                    entity_num = ghost_entity_ids[ghost_idx]
                     update = ghost_info.entity_updates[time_idx]
                     if update.modelindex is None:
                         model_num = None
