@@ -19,6 +19,7 @@
 #     USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
+import argparse
 import bisect
 import dataclasses
 import logging
@@ -188,15 +189,26 @@ def _convert_msg_entity(msg, convert_entity_id):
 
 def _main():
     logging.basicConfig(level=logging.INFO)
-    fnames = sys.argv[1:]
+
+    parser = argparse.ArgumentParser(description="")
+
+    # Positional arguments for input files
+    parser.add_argument('input_files', type=str, nargs='+',
+                        help=('Input demo files. The first file is used as the '
+                              'base demo.'))
+    parser.add_argument('-n', '--set-names', action='store_true',
+                        help='Set this flag to enable setting names.')
+    parser.add_argument('-o', '--output-file', type=str, default='out.dem',
+                        help='Output demo file.')
+    args = parser.parse_args()
 
     # Parse demos.
     logger.info('parsing base demo')
-    base_dem = pydem.parse_demo(fnames[0])
+    base_dem = pydem.parse_demo(args.input_files[0])
     base_info = _BaseInfo.process(base_dem)
     logger.info('parsing ghost demos')
     ghost_infos = []
-    for fname in fnames[1:]:
+    for fname in args.input_files[1:]:
         logger.info(f"processing {fname}")
         ghost_infos.append(_GhostInfo.process(pydem.parse_demo(fname), base_info.models[1]))
 
@@ -215,7 +227,10 @@ def _main():
     # Construct mappings for entity numbers.
     assert base_info.max_clients <= _MAX_SCOREBOARD
     old_num_clients = base_info.max_clients
-    new_num_clients = min(_MAX_SCOREBOARD, old_num_clients + len(ghost_infos))
+    if args.set_names:
+        new_num_clients = min(_MAX_SCOREBOARD, old_num_clients + len(ghost_infos))
+    else:
+        new_num_clients = old_num_clients
     def convert_entity_id(entity_id):
         if entity_id < old_num_clients + 1:
             new_entity_id = entity_id
@@ -336,7 +351,7 @@ def _main():
         new_blocks.append(dataclasses.replace(block, messages=new_messages))
     new_dem = dataclasses.replace(base_dem, blocks=new_blocks)
     logger.info('writing demo')
-    with open('out.dem', 'wb') as f:
+    with open(args.output_file, 'wb') as f:
         new_dem.write(f)
 
 
