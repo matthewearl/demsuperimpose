@@ -228,7 +228,14 @@ def _main():
     assert base_info.max_clients <= _MAX_SCOREBOARD
     old_num_clients = base_info.max_clients
     if args.set_names:
-        new_num_clients = min(_MAX_SCOREBOARD, old_num_clients + len(ghost_infos))
+        new_num_clients = old_num_clients + len(ghost_infos)
+        if new_num_clients > _MAX_SCOREBOARD:
+            logger.warning('total players (%s) exceeds MAX_SCOREBOARD (%s). '
+                           '%s clients will not have names or colors.',
+                           new_num_clients,
+                           _MAX_SCOREBOARD,
+                           new_num_clients - _MAX_SCOREBOARD)
+            new_num_clients = _MAX_SCOREBOARD
     else:
         new_num_clients = old_num_clients
     def convert_entity_id(entity_id):
