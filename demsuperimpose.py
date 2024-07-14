@@ -40,7 +40,6 @@ class _BaseInfo:
     models: list[str]
     max_entity_id: int
     max_clients: int
-    first_non_client_entity_id: int
 
     @classmethod
     def process(cls, dem):
@@ -48,7 +47,6 @@ class _BaseInfo:
         models = None
         max_entity_id = None
         max_clients = None
-        first_non_client_entity_id = None
 
         for block in dem.blocks:
             for msg in block.messages:
@@ -62,16 +60,7 @@ class _BaseInfo:
                         and (max_entity_id is None or max_entity_id < msg.num)):
                     max_entity_id = msg.num
 
-        for block in dem.blocks:
-            for msg in block.messages:
-                if (isinstance(msg, messages.EntityUpdateMessage)
-                        and msg.num > max_clients
-                        and (first_non_client_entity_id is None
-                             or first_non_client_entity_id > msg.num)):
-                    first_non_client_entity_id = msg.num
-
-        return cls(models, max_entity_id, max_clients,
-                   first_non_client_entity_id)
+        return cls(models, max_entity_id, max_clients)
 
 
 @dataclasses.dataclass
