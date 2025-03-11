@@ -163,10 +163,11 @@ def _convert_msg_entity(msg, convert_entity_id):
             entity_num=convert_entity_id(msg.entity_num)
         )
     elif isinstance(msg, messages.EntityUpdateMessage):
-        msg = dataclasses.replace(
-            msg,
-            num=convert_entity_id(msg.num)
-        )
+        new_id = convert_entity_id(msg.num)
+        new_flags = msg.flags
+        if new_id > 255:
+            new_flags |= messages.UpdateFlags.LONGENTITY
+        msg = dataclasses.replace(msg, num=new_id, flags=new_flags)
     elif isinstance(msg, messages.SoundMessage):
         msg = dataclasses.replace(
             msg,
