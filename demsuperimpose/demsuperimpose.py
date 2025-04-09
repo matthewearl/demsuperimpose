@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Matthew Earl
+# Copyright (c) 2025 Matthew Earl
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,11 +22,15 @@
 import argparse
 import bisect
 import dataclasses
+import io
 import logging
 import sys
+from typing import BinaryIO
 
 import pydem
-import messages
+import pydem.cli
+import pydem.format
+from pydem import messages
 
 
 logger = logging.getLogger(__name__)
@@ -188,30 +192,33 @@ def _convert_msg_entity(msg, convert_entity_id):
 
     return msg
 
-def _main():
-    logging.basicConfig(level=logging.INFO)
 
-    parser = argparse.ArgumentParser(description="")
+def _parse_demo_from_file(file: BinaryIO):
+    memory_stream = pydem.cli.MemoryBuffer(file.read())
+    return pydem.format.Demo.parse(memory_stream)
 
-    # Positional arguments for input files
-    parser.add_argument('input_files', type=str, nargs='+',
-                        help=('Input demo files. The first file is used as the '
-                              'base demo.'))
-    parser.add_argument('-n', '--set-names', action='store_true',
-                        help='Set this flag to enable setting names.')
-    parser.add_argument('-o', '--output-file', type=str, default='out.dem',
-                        help='Output demo file.')
-    args = parser.parse_args()
 
+def _fname_to_bytes_io(fname: str):
+    with open(fname, 'rb') as f:
+        return io.BytesIO(f.read())
+
+
+def superimpose(base_dem_file: BinaryIO, other_dem_files: list[BinaryIO],
+                out_dem_file: BinaryIO, set_names: bool):
     # Parse demos.
     logger.info('parsing base demo')
-    base_dem = pydem.parse_demo(args.input_files[0])
+    base_dem = _parse_demo_from_file(base_dem_file)
     base_info = _BaseInfo.process(base_dem)
     logger.info('parsing ghost demos')
     ghost_infos = []
-    for fname in args.input_files[1:]:
-        logger.info(f"processing {fname}")
-        ghost_infos.append(_GhostInfo.process(pydem.parse_demo(fname), base_info.models[1]))
+    for idx, other_dem_file in enumerate(other_dem_files):
+        logger.info(f"processing demo {idx + 1}")
+        ghost_infos.append(
+            _GhostInfo.process(
+                _parse_demo_from_file(other_dem_file),
+                base_info.models[1]
+            )
+        )
 
     # Construct mappings for model numbers.
     logger.info('converting demo')
@@ -228,7 +235,7 @@ def _main():
     # Construct mappings for entity numbers.
     assert base_info.max_clients <= _MAX_SCOREBOARD
     old_num_clients = base_info.max_clients
-    if args.set_names:
+    if set_names:
         new_num_clients = old_num_clients + len(ghost_infos)
         if new_num_clients > _MAX_SCOREBOARD:
             logger.warning('total players (%s) exceeds MAX_SCOREBOARD (%s). '
@@ -359,9 +366,29 @@ def _main():
         new_blocks.append(dataclasses.replace(block, messages=new_messages))
     new_dem = dataclasses.replace(base_dem, blocks=new_blocks)
     logger.info('writing demo')
-    with open(args.output_file, 'wb') as f:
-        new_dem.write(f)
+    new_dem.write(out_dem_file)
 
 
-if __name__ == "__main__":
-    _main()
+def demsuperimpose_main():
+    logging.basicConfig(level=logging.INFO)
+
+    parser = argparse.ArgumentParser(description="")
+
+    # Positional arguments for input files
+    parser.add_argument('input_files', type=str, nargs='+',
+                        help=('Input demo files. The first file is used as the '
+                              'base demo.'))
+    parser.add_argument('-n', '--set-names', action='store_true',
+                        help='Set this flag to enable setting names.')
+    parser.add_argument('-o', '--output-file', type=str, default='out.dem',
+                        help='Output demo file.')
+    args = parser.parse_args()
+
+    with open(args.output_file, 'wb') as out_dem:
+        superimpose(
+            _fname_to_bytes_io(args.input_files[0]),
+            [_fname_to_bytes_io(input_file)
+             for input_file in args.input_files[1:]],
+            out_dem,
+            args.set_names
+        )

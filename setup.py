@@ -7,4 +7,9 @@ setup(
     author='Matthew Earl',
     packages=['demsuperimpose'],
     install_requires=[],
+    entry_points={
+        'console_scripts': [
+            'demsuperimpose = demsuperimpose.demsuperimpose:demsuperimpose_main'
+        ]
+    },
 )
