@@ -148,7 +148,10 @@ class _GhostInfo:
     @classmethod
     def process(cls, dem, base_world_model):
         gis = list(cls.process_all(dem))
-        map_gis = [gi for gi in gis if gi.models[1] == base_world_model]
+        if base_world_model is not None:
+            map_gis = [gi for gi in gis if gi.models[1] == base_world_model]
+        else:
+            map_gis = gis
         if len(map_gis) != len(gis):
             bad_maps = [gi.models[1] for gi in gis if gi.models[1] != base_world_model]
             logger.warning(f'ignoring loads on non-base maps: {bad_maps}')
@@ -204,7 +207,7 @@ def _fname_to_bytes_io(fname: str):
 
 
 def superimpose(base_dem_file: BinaryIO, other_dem_files: list[BinaryIO],
-                out_dem_file: BinaryIO, set_names: bool):
+                out_dem_file: BinaryIO, set_names: bool, ignore_map_name: bool):
     # Parse demos.
     logger.info('parsing base demo')
     base_dem = _parse_demo_from_file(base_dem_file)
@@ -216,7 +219,7 @@ def superimpose(base_dem_file: BinaryIO, other_dem_files: list[BinaryIO],
         ghost_infos.append(
             _GhostInfo.process(
                 _parse_demo_from_file(other_dem_file),
-                base_info.models[1]
+                None if ignore_map_name else base_info.models[1]
             )
         )
 
@@ -380,6 +383,8 @@ def demsuperimpose_main():
                               'base demo.'))
     parser.add_argument('-n', '--set-names', action='store_true',
                         help='Set this flag to enable setting names.')
+    parser.add_argument('-m', '--ignore-map-name', action='store_true',
+                        help='Do not check all map names match.')
     parser.add_argument('-o', '--output-file', type=str, default='out.dem',
                         help='Output demo file.')
     args = parser.parse_args()
@@ -390,5 +395,6 @@ def demsuperimpose_main():
             [_fname_to_bytes_io(input_file)
              for input_file in args.input_files[1:]],
             out_dem,
-            args.set_names
+            args.set_names,
+            args.ignore_map_name
         )
