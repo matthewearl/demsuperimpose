@@ -6,21 +6,19 @@ a single demo.  For best results try recamming the result.
 
 ## Usage
 
-Clone [kugelrund's pydem repo](https://github.com/kugelrund/pydem) and this
-repo:
+1. Install [UV](https://docs.astral.sh/uv/getting-started/installation/).
+2. Clone this repo, then run: 
 
 ```bash
-git clone git@github.com:kugelrund/pydem.git
-git clone git@github.com:matthewearl/demsuperimpose.git
-```
-
-Run the following to convert a demo:
-
-```bash
-PYTHONPATH=pydem python demsuperimpose/demsuperimpose.py base.dem ghost1.dem ghost2.dem ...
+uv run demsuperimpose base.dem ghost1.dem ghost2.dem ...
 ```
 
 This writes a file `out.dem`.
+
+To see all options run:
+```bash
+uv run demsuperimpose -h
+```
 
 ## Limitations
 

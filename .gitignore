@@ -1,3 +1,4 @@
 out.dem
 *.swp
 *.swo
+__pycache__

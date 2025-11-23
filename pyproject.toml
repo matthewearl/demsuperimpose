@@ -1,0 +1,22 @@
+[project]
+name = "demsuperimpose"
+version = "0.0.0"
+description = "Quake demo superimposer"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    { name = "Matthew Earl" }
+]
+dependencies = [
+    "pydem @ git+https://github.com/kugelrund/pydem.git",
+]
+
+[project.urls]
+Homepage = "https://github.com/matthewearl/demsuperimpose"
+
+[project.scripts]
+demsuperimpose = "demsuperimpose.demsuperimpose:demsuperimpose_main"
+
+[build-system]
+requires = ["uv-build>=0.9.10,<0.10.0"]
+build-backend = "uv_build"
